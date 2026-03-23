@@ -13,23 +13,20 @@ const VIDEO_INPUT = detectVideoInput();
 let screenWidth = 1920;
 let screenHeight = 1080;
 
-try {
-  // Use Quartz logical display bounds for input mapping (Retina-safe).
-  const sizeStr = execSync(
-    `python3 -c "import Quartz; b=Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()); print(f'{int(b.size.width)} {int(b.size.height)}')"`,
-    { encoding: "utf8" }
-  ).trim();
-  const parts = sizeStr.split(/\s+/).map((v) => parseInt(v, 10));
-  if (parts.length === 2) {
-    screenWidth = parts[0];
-    screenHeight = parts[1];
-  }
-} catch {}
+const useCliclick = hasCliclick();
+const useQuartzMouse = hasQuartzPython();
+const mouseBackend = useQuartzMouse ? "quartz" : (useCliclick ? "cliclick" : "none");
+const displaySize = getDisplaySize();
+if (displaySize) {
+  screenWidth = displaySize.width;
+  screenHeight = displaySize.height;
+}
 
 console.log(`Screen: ${screenWidth}x${screenHeight}`);
 console.log(`Server: ${SIGNAL_SERVER}`);
 console.log(`FPS: ${FPS}, Quality: ${QUALITY}, Scale: ${SCALE}`);
 console.log(`Video input: ${VIDEO_INPUT}`);
+console.log(`Mouse backend: ${mouseBackend}`);
 
 let ws = null;
 let ffmpegProcess = null;
@@ -68,8 +65,54 @@ function hasCliclick() {
   }
 }
 
-const useCliclick = hasCliclick();
-console.log(useCliclick ? "Input: cliclick" : "Input: osascript/python (install cliclick for better perf)");
+function hasQuartzPython() {
+  try {
+    execSync(`python3 -c "import Quartz"`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getDisplaySize() {
+  // Best path: native CoreGraphics via swift (no pyobjc needed).
+  try {
+    const swiftOut = execSync(
+      `swift -e "import CoreGraphics; let b = CGDisplayBounds(CGMainDisplayID()); print(Int(b.width), Int(b.height))"`,
+      { encoding: "utf8" }
+    ).trim();
+    const s = swiftOut.split(/\s+/).map((v) => parseInt(v, 10));
+    if (s.length === 2 && Number.isFinite(s[0]) && Number.isFinite(s[1])) {
+      return { width: s[0], height: s[1] };
+    }
+  } catch {}
+
+  // Fallback: pyobjc Quartz if available.
+  try {
+    const pyOut = execSync(
+      `python3 -c "import Quartz; b=Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()); print(f'{int(b.size.width)} {int(b.size.height)}')"`,
+      { encoding: "utf8" }
+    ).trim();
+    const p = pyOut.split(/\s+/).map((v) => parseInt(v, 10));
+    if (p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+      return { width: p[0], height: p[1] };
+    }
+  } catch {}
+
+  // Last fallback: physical resolution from system_profiler.
+  try {
+    const sizeStr = execSync(
+      `system_profiler SPDisplaysDataType | grep Resolution | head -1 | awk '{print $2, $4}'`,
+      { encoding: "utf8" }
+    ).trim();
+    const parts = sizeStr.split(/\s+/).map((v) => parseInt(v, 10));
+    if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+      return { width: parts[0], height: parts[1] };
+    }
+  } catch {}
+
+  return null;
+}
 
 function connectSignaling() {
   console.log("Connecting to signaling server...");
@@ -266,22 +309,44 @@ function handleInput(data) {
 }
 
 function moveMouse(x, y) {
-  const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (${x}, ${y}), 0))"`;
-  spawn("bash", ["-c", script], { stdio: "ignore" });
+  if (mouseBackend === "quartz") {
+    const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (${x}, ${y}), 0))"`;
+    spawn("bash", ["-c", script], { stdio: "ignore" });
+    return;
+  }
+  if (mouseBackend === "cliclick") {
+    spawn("cliclick", [`m:${x},${y}`], { stdio: "ignore" });
+  }
 }
 
 function mouseDown(x, y, button) {
-  const eventType = button === 2 ? "Quartz.kCGEventRightMouseDown" : "Quartz.kCGEventLeftMouseDown";
-  const btnNum = button === 2 ? 1 : 0;
-  const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
-  spawn("bash", ["-c", script], { stdio: "ignore" });
+  if (mouseBackend === "quartz") {
+    const eventType = button === 2 ? "Quartz.kCGEventRightMouseDown" : "Quartz.kCGEventLeftMouseDown";
+    const btnNum = button === 2 ? 1 : 0;
+    const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
+    spawn("bash", ["-c", script], { stdio: "ignore" });
+    return;
+  }
+  if (mouseBackend === "cliclick") {
+    if (button === 2) {
+      spawn("cliclick", [`rc:${x},${y}`], { stdio: "ignore" });
+    } else {
+      spawn("cliclick", [`m:${x},${y}`, "dd:."], { stdio: "ignore" });
+    }
+  }
 }
 
 function mouseUp(x, y, button) {
-  const eventType = button === 2 ? "Quartz.kCGEventRightMouseUp" : "Quartz.kCGEventLeftMouseUp";
-  const btnNum = button === 2 ? 1 : 0;
-  const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
-  spawn("bash", ["-c", script], { stdio: "ignore" });
+  if (mouseBackend === "quartz") {
+    const eventType = button === 2 ? "Quartz.kCGEventRightMouseUp" : "Quartz.kCGEventLeftMouseUp";
+    const btnNum = button === 2 ? 1 : 0;
+    const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
+    spawn("bash", ["-c", script], { stdio: "ignore" });
+    return;
+  }
+  if (mouseBackend === "cliclick" && button !== 2) {
+    spawn("cliclick", [`m:${x},${y}`, "du:."], { stdio: "ignore" });
+  }
 }
 
 function doubleClick(x, y) {
