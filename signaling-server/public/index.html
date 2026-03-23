@@ -124,6 +124,8 @@
   let screenW = 1920, screenH = 1080;
   let frames = 0;
   let lastFpsTime = performance.now();
+  let latestVideoFrame = null;
+  let videoDecodeBusy = false;
   let audioCtx = null;
   let audioNode = null;
   let audioQueue = [];
@@ -275,18 +277,21 @@
 
   window.addEventListener("resize", fitCanvas);
 
-  function renderFrame(buf) {
-    const blob = new Blob([buf], { type: "image/jpeg" });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      if (img.width !== screenW || img.height !== screenH) {
-        screenW = img.width;
-        screenH = img.height;
+  async function processLatestVideoFrame() {
+    if (videoDecodeBusy || !latestVideoFrame) return;
+    videoDecodeBusy = true;
+    const buf = latestVideoFrame;
+    latestVideoFrame = null;
+    try {
+      const blob = new Blob([buf], { type: "image/jpeg" });
+      const bitmap = await createImageBitmap(blob);
+      if (bitmap.width !== screenW || bitmap.height !== screenH) {
+        screenW = bitmap.width;
+        screenH = bitmap.height;
         fitCanvas();
       }
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
       frames++;
       const now = performance.now();
       if (now - lastFpsTime > 1000) {
@@ -294,8 +299,17 @@
         frames = 0;
         lastFpsTime = now;
       }
-    };
-    img.src = url;
+    } catch {}
+    videoDecodeBusy = false;
+    if (latestVideoFrame) {
+      processLatestVideoFrame();
+    }
+  }
+
+  function renderFrame(buf) {
+    // Real-time mode: always keep only the latest frame to avoid lag buildup.
+    latestVideoFrame = buf;
+    processLatestVideoFrame();
   }
 
   function coords(e) {

@@ -6,12 +6,13 @@ const SIGNAL_SERVER = "ws://140.245.15.97/remoteControl/ws";
 const ROOM = "default";
 const PASSWORD = "pass";
 const FPS = 15;
-const QUALITY = 5;
-const SCALE = "1280:-1";
+const QUALITY = 10;
+const SCALE = "960:-1";
 const VIDEO_INPUT = detectVideoInput();
 const AUDIO_INPUT = detectAudioInput();
 const AUDIO_SAMPLE_RATE = 48000;
 const AUDIO_CHANNELS = 1;
+const MAX_WS_BUFFERED_BYTES = 512 * 1024;
 
 let screenWidth = 1920;
 let screenHeight = 1080;
@@ -296,8 +297,13 @@ function startCapture() {
 
 function sendFrame(frame) {
   if (ws && ws.readyState === 1 && clientConnected) {
+    // Real-time mode: drop stale frames when network/backpressure builds up.
+    if (typeof ws.bufferedAmount === "number" && ws.bufferedAmount > MAX_WS_BUFFERED_BYTES) {
+      return;
+    }
     try {
-      ws.send(Buffer.concat([Buffer.from([0x01]), frame]), { binary: true });
+      // Keep video as raw JPEG bytes for maximum browser compatibility.
+      ws.send(frame, { binary: true });
     } catch {}
   }
 }
