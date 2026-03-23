@@ -248,18 +248,38 @@
     }
   }
 
+  let mouseDown = false;
+  let lastMouseButton = 0;
+
   canvas.addEventListener("mousemove", (e) => {
     send({ action: "mousemove", ...coords(e) });
   });
 
   canvas.addEventListener("mousedown", (e) => {
     e.preventDefault();
+    mouseDown = true;
+    lastMouseButton = e.button;
+    send({ action: "mousemove", ...coords(e) });
     send({ action: "mousedown", ...coords(e), button: e.button });
   });
 
-  canvas.addEventListener("mouseup", (e) => {
+  window.addEventListener("mousemove", (e) => {
+    if (!mouseDown) return;
+    send({ action: "mousemove", ...coords(e) });
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (!mouseDown) return;
     e.preventDefault();
-    send({ action: "mouseup", ...coords(e), button: e.button });
+    send({ action: "mousemove", ...coords(e) });
+    send({ action: "mouseup", ...coords(e), button: e.button ?? lastMouseButton });
+    mouseDown = false;
+  });
+
+  window.addEventListener("blur", () => {
+    if (!mouseDown) return;
+    send({ action: "mouseup", x: 0, y: 0, button: lastMouseButton });
+    mouseDown = false;
   });
 
   canvas.addEventListener("wheel", (e) => {

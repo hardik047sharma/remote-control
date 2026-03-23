@@ -14,14 +14,15 @@ let screenWidth = 1920;
 let screenHeight = 1080;
 
 try {
+  // Use Quartz logical display bounds for input mapping (Retina-safe).
   const sizeStr = execSync(
-    `system_profiler SPDisplaysDataType | grep Resolution | head -1 | awk '{print $2, $4}'`,
+    `python3 -c "import Quartz; b=Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()); print(f'{int(b.size.width)} {int(b.size.height)}')"`,
     { encoding: "utf8" }
   ).trim();
-  const parts = sizeStr.split(/\s+/);
+  const parts = sizeStr.split(/\s+/).map((v) => parseInt(v, 10));
   if (parts.length === 2) {
-    screenWidth = parseInt(parts[0], 10);
-    screenHeight = parseInt(parts[1], 10);
+    screenWidth = parts[0];
+    screenHeight = parts[1];
   }
 } catch {}
 
