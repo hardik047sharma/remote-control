@@ -125,11 +125,12 @@ This project now uses fixed in-code configuration (no `.env` required):
 
 ### Audio Streaming
 
-Audio is not implemented in the current browser relay path yet.
+Audio streaming is now supported when a loopback audio device is available on Mac.
 
-- The host currently sends MJPEG video frames only.
-- The web client currently decodes JPEG frames only.
-- If you need audio, add a separate audio transport (for example WebRTC).
+- Install BlackHole (recommended): https://existential.audio/blackhole/
+- In Audio MIDI Setup, route system output through a Multi-Output Device that includes BlackHole.
+- The host auto-detects `BlackHole` (or similar loopback devices) and streams PCM audio to the browser.
+- If no loopback device is found, audio is disabled to avoid capturing microphone by mistake.
 
 ## Troubleshooting
 

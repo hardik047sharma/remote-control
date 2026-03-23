@@ -9,6 +9,9 @@ const FPS = 15;
 const QUALITY = 5;
 const SCALE = "1280:-1";
 const VIDEO_INPUT = detectVideoInput();
+const AUDIO_INPUT = detectAudioInput();
+const AUDIO_SAMPLE_RATE = 48000;
+const AUDIO_CHANNELS = 1;
 
 let screenWidth = 1920;
 let screenHeight = 1080;
@@ -26,19 +29,17 @@ console.log(`Screen: ${screenWidth}x${screenHeight}`);
 console.log(`Server: ${SIGNAL_SERVER}`);
 console.log(`FPS: ${FPS}, Quality: ${QUALITY}, Scale: ${SCALE}`);
 console.log(`Video input: ${VIDEO_INPUT}`);
+console.log(`Audio input: ${AUDIO_INPUT === null ? "disabled (no suitable device)" : AUDIO_INPUT}`);
 console.log(`Mouse backend: ${mouseBackend}`);
 
 let ws = null;
 let ffmpegProcess = null;
+let audioProcess = null;
 let connected = false;
 let clientConnected = false;
 
 function detectVideoInput() {
-  // ffmpeg returns non-zero for -list_devices, so use spawnSync and parse output regardless of exit code.
-  const p = spawnSync("ffmpeg", ["-f", "avfoundation", "-list_devices", "true", "-i", ""], {
-    encoding: "utf8"
-  });
-  const out = `${p.stdout || ""}\n${p.stderr || ""}`;
+  const out = listAvfoundationDevices();
   const lines = out.split("\n");
 
   const screenIndices = [];
@@ -54,6 +55,44 @@ function detectVideoInput() {
 
   // No screen capture device found; do not fall back to camera.
   return null;
+}
+
+function detectAudioInput() {
+  const out = listAvfoundationDevices();
+  const lines = out.split("\n");
+  let inAudioSection = false;
+  const devices = [];
+
+  for (const line of lines) {
+    if (/AVFoundation audio devices/i.test(line)) {
+      inAudioSection = true;
+      continue;
+    }
+    if (/AVFoundation video devices/i.test(line)) {
+      inAudioSection = false;
+      continue;
+    }
+    if (!inAudioSection) continue;
+    const m = line.match(/\[(\d+)\]\s+(.+)/);
+    if (m) {
+      devices.push({ index: Number(m[1]), name: m[2].trim() });
+    }
+  }
+
+  // Prefer virtual loopback devices for system audio (BlackHole/Loopback/Soundflower).
+  const preferred = devices.find((d) => /blackhole|loopback|soundflower/i.test(d.name));
+  if (preferred) return preferred.index;
+
+  // If no loopback device exists, disable audio instead of accidentally capturing mic.
+  return null;
+}
+
+function listAvfoundationDevices() {
+  // ffmpeg returns non-zero for -list_devices; parse output regardless of exit code.
+  const p = spawnSync("ffmpeg", ["-f", "avfoundation", "-list_devices", "true", "-i", ""], {
+    encoding: "utf8"
+  });
+  return `${p.stdout || ""}\n${p.stderr || ""}`;
 }
 
 function hasCliclick() {
@@ -251,20 +290,64 @@ function startCapture() {
       setTimeout(startCapture, 1000);
     }
   });
+
+  startAudioCapture();
 }
 
 function sendFrame(frame) {
   if (ws && ws.readyState === 1 && clientConnected) {
     try {
-      ws.send(frame, { binary: true });
+      ws.send(Buffer.concat([Buffer.from([0x01]), frame]), { binary: true });
     } catch {}
   }
+}
+
+function startAudioCapture() {
+  if (audioProcess) return;
+  if (AUDIO_INPUT === null) return;
+
+  const args = [
+    "-f", "avfoundation",
+    "-i", `:${AUDIO_INPUT}`,
+    "-ac", String(AUDIO_CHANNELS),
+    "-ar", String(AUDIO_SAMPLE_RATE),
+    "-f", "s16le",
+    "-acodec", "pcm_s16le",
+    "pipe:1"
+  ];
+
+  console.log("Starting audio capture...");
+  audioProcess = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  audioProcess.stdout.on("data", (chunk) => {
+    if (ws && ws.readyState === 1 && clientConnected) {
+      try {
+        ws.send(Buffer.concat([Buffer.from([0x02]), chunk]), { binary: true });
+      } catch {}
+    }
+  });
+
+  audioProcess.stderr.on("data", () => {
+    // Keep quiet unless process exits; ffmpeg prints frequent progress lines.
+  });
+
+  audioProcess.on("close", (code) => {
+    if (code !== 0 && clientConnected) {
+      console.log("Audio capture exited:", code);
+      setTimeout(startAudioCapture, 1000);
+    }
+    audioProcess = null;
+  });
 }
 
 function stopCapture() {
   if (ffmpegProcess) {
     ffmpegProcess.kill("SIGTERM");
     ffmpegProcess = null;
+  }
+  if (audioProcess) {
+    audioProcess.kill("SIGTERM");
+    audioProcess = null;
   }
 }
 

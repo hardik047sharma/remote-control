@@ -124,6 +124,53 @@
   let screenW = 1920, screenH = 1080;
   let frames = 0;
   let lastFpsTime = performance.now();
+  let audioCtx = null;
+  let audioNode = null;
+  let audioQueue = [];
+  let audioQueueOffset = 0;
+
+  function initAudioPlayback() {
+    if (audioCtx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC({ sampleRate: 48000 });
+    audioNode = audioCtx.createScriptProcessor(2048, 1, 1);
+    audioNode.onaudioprocess = (evt) => {
+      const out = evt.outputBuffer.getChannelData(0);
+      out.fill(0);
+      let i = 0;
+      while (i < out.length && audioQueue.length > 0) {
+        const chunk = audioQueue[0];
+        const available = chunk.length - audioQueueOffset;
+        const needed = out.length - i;
+        const take = Math.min(available, needed);
+        out.set(chunk.subarray(audioQueueOffset, audioQueueOffset + take), i);
+        i += take;
+        audioQueueOffset += take;
+        if (audioQueueOffset >= chunk.length) {
+          audioQueue.shift();
+          audioQueueOffset = 0;
+        }
+      }
+    };
+    audioNode.connect(audioCtx.destination);
+  }
+
+  function enqueueAudioPcm16(payload) {
+    if (!audioCtx) return;
+    const view = new DataView(payload);
+    const sampleCount = Math.floor(payload.byteLength / 2);
+    if (sampleCount <= 0) return;
+    const f32 = new Float32Array(sampleCount);
+    for (let i = 0; i < sampleCount; i++) {
+      f32[i] = view.getInt16(i * 2, true) / 32768;
+    }
+    audioQueue.push(f32);
+    // Keep latency bounded if browser gets behind.
+    while (audioQueue.length > 100) {
+      audioQueue.shift();
+    }
+  }
 
   function status(text, state) {
     statusText.textContent = text;
@@ -143,6 +190,10 @@
     const room = document.getElementById("room").value.trim() || "default";
     const pass = document.getElementById("pass").value.trim();
     status("Connecting...", "wait");
+    initAudioPlayback();
+    if (audioCtx && audioCtx.state !== "running") {
+      audioCtx.resume();
+    }
 
     ws = new WebSocket(wsUrl());
     ws.binaryType = "arraybuffer";
@@ -153,6 +204,16 @@
 
     ws.onmessage = (evt) => {
       if (evt.data instanceof ArrayBuffer) {
+        const data = new Uint8Array(evt.data);
+        if (data.length > 1 && data[0] === 0x01) {
+          renderFrame(data.slice(1).buffer);
+          return;
+        }
+        if (data.length > 1 && data[0] === 0x02) {
+          enqueueAudioPcm16(data.slice(1).buffer);
+          return;
+        }
+        // Backward-compatibility for old agents that send raw JPEG without prefix.
         renderFrame(evt.data);
         return;
       }
@@ -184,6 +245,8 @@
       loginDiv.style.display = "flex";
       viewerDiv.style.display = "none";
       dcBtn.style.display = "none";
+      audioQueue = [];
+      audioQueueOffset = 0;
     };
   };
 
