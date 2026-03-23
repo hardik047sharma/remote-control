@@ -266,38 +266,18 @@ function handleInput(data) {
 }
 
 function moveMouse(x, y) {
-  if (useCliclick) {
-    spawn("cliclick", [`m:${x},${y}`], { stdio: "ignore" });
-  } else {
-    const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (${x}, ${y}), 0))"`;
-    spawn("bash", ["-c", script], { stdio: "ignore" });
-  }
+  const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (${x}, ${y}), 0))"`;
+  spawn("bash", ["-c", script], { stdio: "ignore" });
 }
 
 function mouseDown(x, y, button) {
-  if (useCliclick) {
-    if (button === 2) {
-      spawn("cliclick", [`rc:${x},${y}`], { stdio: "ignore" });
-    } else {
-      // Use down/up events so drag and hold actions work.
-      spawn("cliclick", [`m:${x},${y}`, "dd:."], { stdio: "ignore" });
-    }
-  } else {
-    const eventType = button === 2 ? "Quartz.kCGEventRightMouseDown" : "Quartz.kCGEventLeftMouseDown";
-    const btnNum = button === 2 ? 1 : 0;
-    const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
-    spawn("bash", ["-c", script], { stdio: "ignore" });
-  }
+  const eventType = button === 2 ? "Quartz.kCGEventRightMouseDown" : "Quartz.kCGEventLeftMouseDown";
+  const btnNum = button === 2 ? 1 : 0;
+  const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
+  spawn("bash", ["-c", script], { stdio: "ignore" });
 }
 
 function mouseUp(x, y, button) {
-  if (useCliclick) {
-    if (button !== 2) {
-      spawn("cliclick", [`m:${x},${y}`, "du:."], { stdio: "ignore" });
-    }
-    return;
-  }
-
   const eventType = button === 2 ? "Quartz.kCGEventRightMouseUp" : "Quartz.kCGEventLeftMouseUp";
   const btnNum = button === 2 ? 1 : 0;
   const script = `python3 -c "import Quartz; Quartz.CGEventPost(0, Quartz.CGEventCreateMouseEvent(None, ${eventType}, (${x}, ${y}), ${btnNum}))"`;
