@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remote Desktop</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0c0c0c;
+      color: #d4d4d4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #bar {
+      background: #181818;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    #bar .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #555;
+    }
+    #bar .dot.on { background: #22c55e; }
+    #bar .dot.wait { background: #eab308; }
+    #bar span { font-size: 12px; color: #888; }
+    #bar button {
+      margin-left: auto;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #ccc;
+      padding: 3px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    #bar button:hover { background: #3a3a3a; }
+    #login {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+    }
+    #login h2 { font-weight: 400; font-size: 18px; color: #aaa; }
+    #login input {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #ddd;
+      padding: 9px 13px;
+      border-radius: 5px;
+      font-size: 13px;
+      width: 220px;
+    }
+    #login button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 9px 30px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    #login button:hover { background: #1d4ed8; }
+    #viewer {
+      flex: 1;
+      display: none;
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+    #canvas {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #fps { position: fixed; bottom: 8px; right: 12px; font-size: 10px; color: #555; z-index: 20; }
+  </style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="dot" id="dot"></div>
+  <span id="status-text">Disconnected</span>
+  <button id="fs-btn">Fullscreen</button>
+  <button id="dc-btn" style="display:none">Disconnect</button>
+</div>
+
+<div id="login">
+  <h2>Remote Desktop</h2>
+  <input id="room" type="text" placeholder="Room name" value="default" />
+  <input id="pass" type="password" placeholder="Password" value="changeme" />
+  <button id="go-btn">Connect</button>
+</div>
+
+<div id="viewer">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="fps"></div>
+
+<script>
+  const dot = document.getElementById("dot");
+  const statusText = document.getElementById("status-text");
+  const loginDiv = document.getElementById("login");
+  const viewerDiv = document.getElementById("viewer");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const fpsEl = document.getElementById("fps");
+  const fsBtn = document.getElementById("fs-btn");
+  const dcBtn = document.getElementById("dc-btn");
+  const goBtn = document.getElementById("go-btn");
+
+  let ws = null;
+  let screenW = 1920, screenH = 1080;
+  let frames = 0;
+  let lastFpsTime = performance.now();
+
+  function status(text, state) {
+    statusText.textContent = text;
+    dot.className = "dot" + (state === "on" ? " on" : state === "wait" ? " wait" : "");
+  }
+
+  function wsUrl() {
+    const l = window.location;
+    return (l.protocol === "https:" ? "wss:" : "ws:") + "//" + l.host;
+  }
+
+  goBtn.onclick = () => {
+    const room = document.getElementById("room").value.trim() || "default";
+    const pass = document.getElementById("pass").value.trim();
+    status("Connecting...", "wait");
+
+    ws = new WebSocket(wsUrl());
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "join", room, password: pass, role: "client" }));
+    };
+
+    ws.onmessage = (evt) => {
+      if (evt.data instanceof ArrayBuffer) {
+        renderFrame(evt.data);
+        return;
+      }
+      const msg = JSON.parse(evt.data);
+      if (msg.type === "joined") {
+        status("Waiting for host...", "wait");
+        loginDiv.style.display = "none";
+        viewerDiv.style.display = "block";
+        dcBtn.style.display = "inline";
+      }
+      if (msg.type === "host-connected") {
+        status("Connected", "on");
+      }
+      if (msg.type === "host-disconnected") {
+        status("Host disconnected", "wait");
+      }
+      if (msg.type === "screen-info") {
+        screenW = msg.width;
+        screenH = msg.height;
+        fitCanvas();
+      }
+      if (msg.type === "error") {
+        status("Error: " + msg.message, "");
+      }
+    };
+
+    ws.onclose = () => {
+      status("Disconnected", "");
+      loginDiv.style.display = "flex";
+      viewerDiv.style.display = "none";
+      dcBtn.style.display = "none";
+    };
+  };
+
+  dcBtn.onclick = () => { if (ws) ws.close(); };
+
+  fsBtn.onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else viewerDiv.requestFullscreen();
+  };
+
+  function fitCanvas() {
+    const cw = viewerDiv.clientWidth;
+    const ch = viewerDiv.clientHeight;
+    const aspect = screenW / screenH;
+    let w, h;
+    if (cw / ch > aspect) {
+      h = ch; w = ch * aspect;
+    } else {
+      w = cw; h = cw / aspect;
+    }
+    canvas.width = screenW;
+    canvas.height = screenH;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+  }
+
+  window.addEventListener("resize", fitCanvas);
+
+  function renderFrame(buf) {
+    const blob = new Blob([buf], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      if (img.width !== screenW || img.height !== screenH) {
+        screenW = img.width;
+        screenH = img.height;
+        fitCanvas();
+      }
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      frames++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) {
+        fpsEl.textContent = frames + " fps";
+        frames = 0;
+        lastFpsTime = now;
+      }
+    };
+    img.src = url;
+  }
+
+  function coords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+  }
+
+  function send(data) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "input", data }));
+    }
+  }
+
+  canvas.addEventListener("mousemove", (e) => {
+    send({ action: "mousemove", ...coords(e) });
+  });
+
+  canvas.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    send({ action: "mousedown", ...coords(e), button: e.button });
+  });
+
+  canvas.addEventListener("mouseup", (e) => {
+    e.preventDefault();
+    send({ action: "mouseup", ...coords(e), button: e.button });
+  });
+
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    send({ action: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+  }, { passive: false });
+
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  canvas.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    send({ action: "dblclick", ...coords(e), button: e.button });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (viewerDiv.style.display === "none") return;
+    if (e.target.tagName === "INPUT") return;
+    e.preventDefault();
+    send({
+      action: "keydown",
+      key: e.key,
+      code: e.code,
+      meta: e.metaKey,
+      ctrl: e.ctrlKey,
+      alt: e.altKey,
+      shift: e.shiftKey
+    });
+  });
+
+  document.addEventListener("keyup", (e) => {
+    if (viewerDiv.style.display === "none") return;
+    if (e.target.tagName === "INPUT") return;
+    e.preventDefault();
+    send({
+      action: "keyup",
+      key: e.key,
+      code: e.code,
+      meta: e.metaKey,
+      ctrl: e.ctrlKey,
+      alt: e.altKey,
+      shift: e.shiftKey
+    });
+  });
+</script>
+</body>
+</html>

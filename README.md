@@ -1,0 +1,182 @@
+# Remote Desktop System
+
+Custom remote desktop: stream your Mac's screen to a Windows machine, with keyboard/mouse control.
+
+## Architecture
+
+```
+          Oracle Cloud VM
+      ┌──────────────────────┐
+      │   Node.js Server     │
+      │  (signaling + relay) │
+      │   Serves client UI   │
+      └──────────┬───────────┘
+                 │
+      ┌──────────┴──────────┐
+      │                     │
+   Mac (Host)         Windows (Client)
+   ffmpeg capture     Browser UI
+   input simulation   mouse/keyboard capture
+   background agent   browser renderer
+```
+
+## How It Works
+
+1. Mac agent captures screen via ffmpeg → sends JPEG frames over WebSocket to server
+2. Server relays frames to the Windows client browser
+3. Client renders frames on a canvas
+4. Client captures mouse/keyboard events → sends to server → relays to Mac agent
+5. Mac agent simulates the input using cliclick / Quartz CGEvents
+
+## Quick Start
+
+### Step 1: Deploy Server (Oracle Cloud)
+
+```bash
+# SSH into your Oracle VM
+ssh user@YOUR_ORACLE_IP
+
+# Copy the signaling-server folder to your VM
+# Then:
+cd signaling-server
+chmod +x setup.sh
+./setup.sh
+```
+
+Make sure port 3000 is open:
+- Oracle Cloud Console → Networking → VCN → Security Lists → Add Ingress Rule
+  - Source CIDR: 0.0.0.0/0
+  - Protocol: TCP
+  - Destination Port: 3000
+- On the VM: `sudo iptables -I INPUT -p tcp --dport 3000 -j ACCEPT`
+
+To run the server persistently:
+```bash
+# Using nohup
+nohup ROOM_PASSWORD=your_password node server.js &
+
+# Or using pm2
+npm install -g pm2
+ROOM_PASSWORD=your_password pm2 start server.js --name remote-desktop
+pm2 save
+pm2 startup
+```
+
+### Step 2: Setup Mac Agent (Host)
+
+```bash
+cd mac-agent
+chmod +x setup.sh
+./setup.sh
+```
+
+The setup script will:
+- Install ffmpeg, cliclick, and Node.js dependencies
+- Ask for your server IP and room settings
+- Create a .env config file
+- Configure the LaunchAgent plist
+
+To run manually:
+```bash
+cd mac-agent
+node agent.js
+```
+
+To run in background (no Dock icon, starts on login):
+```bash
+cp com.remote.desktop.agent.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.remote.desktop.agent.plist
+```
+
+**IMPORTANT macOS Permissions:**
+
+Go to System Settings → Privacy & Security and enable:
+1. **Screen Recording** → Add Terminal (or iTerm/your terminal app)
+2. **Accessibility** → Add Terminal (or iTerm/your terminal app)
+
+If using LaunchAgent, also add `node` to both permission lists.
+
+### Step 3: Connect from Windows
+
+Open Chrome on your Windows machine:
+```
+http://YOUR_ORACLE_IP:3000
+```
+
+Enter the room name and password, then click Connect.
+
+## Configuration
+
+### Mac Agent Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| SIGNAL_SERVER | ws://localhost:3000 | WebSocket URL of your server |
+| ROOM | default | Room name |
+| ROOM_PASSWORD | changeme | Room password |
+| FPS | 15 | Capture framerate |
+| QUALITY | 5 | JPEG quality (1=best, 31=worst) |
+| SCALE | 1280:-1 | Output resolution (width:-1 keeps aspect) |
+
+### Performance Tuning
+
+- **Same network**: Set FPS=30, QUALITY=3 for smooth experience
+- **Over internet**: FPS=10-15, QUALITY=5-8 depending on upload speed
+- **Low bandwidth**: FPS=8, QUALITY=10, SCALE=960:-1
+
+### Audio Streaming
+
+Audio is not implemented in the current browser relay path yet.
+
+- The host currently sends MJPEG video frames only.
+- The web client currently decodes JPEG frames only.
+- If you need audio, add a separate audio transport (for example WebRTC).
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Black screen | Grant Screen Recording permission, restart terminal |
+| No mouse/keyboard control | Grant Accessibility permission, restart terminal |
+| Connection refused | Check server is running, port 3000 open on Oracle |
+| Low FPS | Reduce QUALITY value, lower SCALE resolution |
+| ffmpeg errors | Run `ffmpeg -f avfoundation -list_devices true -i ""` to check device indices |
+| Agent won't connect | Verify SIGNAL_SERVER URL is correct (ws://IP:3000) |
+
+## Security Recommendations
+
+- Change the default room password
+- Use nginx reverse proxy with SSL for production:
+  ```
+  server {
+      listen 443 ssl;
+      ssl_certificate /path/to/cert.pem;
+      ssl_certificate_key /path/to/key.pem;
+
+      location / {
+          proxy_pass http://localhost:3000;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+      }
+  }
+  ```
+- Consider IP whitelisting on your Oracle security list
+
+## File Structure
+
+```
+remote-desktop/
+├── signaling-server/          # Deploy on Oracle Cloud
+│   ├── server.js              # Node.js signaling + relay server
+│   ├── setup.sh               # Server setup script
+│   ├── package.json
+│   └── public/
+│       └── index.html         # Windows client UI
+├── mac-agent/                 # Run on your Mac
+│   ├── agent.js               # Screen capture + input handler
+│   ├── setup.sh               # Mac setup script
+│   ├── package.json
+│   └── com.remote.desktop.agent.plist  # LaunchAgent for background run
+└── README.md
+```

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.remote.desktop.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>AGENT_PATH/agent.js</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SIGNAL_SERVER</key>
+        <string>ws://YOUR_ORACLE_IP:3000</string>
+        <key>ROOM</key>
+        <string>default</string>
+        <key>ROOM_PASSWORD</key>
+        <string>changeme</string>
+        <key>FPS</key>
+        <string>15</string>
+        <key>QUALITY</key>
+        <string>5</string>
+        <key>SCALE</key>
+        <string>1280:-1</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/remote-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/remote-agent.err</string>
+</dict>
+</plist>
