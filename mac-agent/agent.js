@@ -1,4 +1,4 @@
-const { spawn, execSync } = require("child_process");
+const { spawn, execSync, spawnSync } = require("child_process");
 const WebSocket = require("ws");
 
 // Fixed deployment config (no environment variables needed)
@@ -36,19 +36,26 @@ let connected = false;
 let clientConnected = false;
 
 function detectVideoInput() {
-  try {
-    // avfoundation prints device list to stderr; capture both streams.
-    const out = execSync(`ffmpeg -f avfoundation -list_devices true -i "" 2>&1`, { encoding: "utf8" });
-    const lines = out.split("\n");
-    for (const line of lines) {
-      const m = line.match(/\[(\d+)\]\s+Capture screen/i);
-      if (m) {
-        return `${m[1]}:none`;
-      }
-    }
-  } catch {}
-  // Most Macs expose the primary display at 0.
-  return "0:none";
+  // ffmpeg returns non-zero for -list_devices, so use spawnSync and parse output regardless of exit code.
+  const p = spawnSync("ffmpeg", ["-f", "avfoundation", "-list_devices", "true", "-i", ""], {
+    encoding: "utf8"
+  });
+  const out = `${p.stdout || ""}\n${p.stderr || ""}`;
+  const lines = out.split("\n");
+
+  const screenIndices = [];
+  for (const line of lines) {
+    const m = line.match(/\[(\d+)\]\s+Capture screen/i);
+    if (m) screenIndices.push(Number(m[1]));
+  }
+
+  if (screenIndices.length > 0) {
+    // Prefer the first advertised screen device.
+    return `${screenIndices[0]}:none`;
+  }
+
+  // No screen capture device found; do not fall back to camera.
+  return null;
 }
 
 function hasCliclick() {
@@ -129,6 +136,12 @@ function sendScreenInfo() {
 
 function startCapture() {
   if (ffmpegProcess) return;
+  if (!VIDEO_INPUT) {
+    console.error("No AVFoundation 'Capture screen' device found. Not starting capture.");
+    console.error("Run this on Mac and ensure screen devices are listed:");
+    console.error("  ffmpeg -f avfoundation -list_devices true -i \"\"");
+    return;
+  }
 
   const args = [
     "-f", "avfoundation",
