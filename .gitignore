@@ -18,6 +18,9 @@ pnpm-debug.log*
 # OS / editor noise
 .DS_Store
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
 
 # Runtime temp files
 tmp/

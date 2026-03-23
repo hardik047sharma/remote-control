@@ -62,7 +62,9 @@ pm2 save
 pm2 startup
 ```
 
-### Step 2: Setup Mac Agent (Host)
+### Step 2: Setup Host Agent
+
+#### Option A: Mac host (`mac-agent`)
 
 ```bash
 cd mac-agent
@@ -93,6 +95,19 @@ Go to System Settings → Privacy & Security and enable:
 2. **Accessibility** → Add Terminal (or iTerm/your terminal app)
 
 If using LaunchAgent, also add `node` to both permission lists.
+
+#### Option B: Windows host (`win-agent`)
+
+```powershell
+cd win-agent
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+node agent.js
+```
+
+Notes for Windows host:
+- Run the terminal as Administrator for best input-injection reliability.
+- ffmpeg is required in PATH.
+- Optional system audio needs a loopback source (for example Stereo Mix or VB-Audio Virtual Cable).
 
 ### Step 3: Connect from Windows
 
@@ -132,6 +147,12 @@ Audio streaming is now supported when a loopback audio device is available on Ma
 - The host auto-detects `BlackHole` (or similar loopback devices) and streams PCM audio to the browser.
 - If no loopback device is found, audio is disabled to avoid capturing microphone by mistake.
 
+For Windows host audio, the `win-agent` auto-detects loopback devices such as:
+- `virtual-audio-capturer`
+- `Stereo Mix`
+- `What U Hear`
+- `CABLE Output` / `VB-Audio`
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -141,6 +162,7 @@ Audio streaming is now supported when a loopback audio device is available on Ma
 | Connection refused | Check server is running, port 3000 open on Oracle |
 | Low FPS | Reduce QUALITY value, lower SCALE resolution |
 | ffmpeg errors | Run `ffmpeg -f avfoundation -list_devices true -i ""` to check device indices |
+| Windows host has no audio | Enable Stereo Mix or install VB-Audio Virtual Cable |
 | Agent won't connect | Verify Nginx forwards `/remoteControl/ws` to the Node server |
 
 ## Security Recommendations
@@ -178,5 +200,9 @@ remote-desktop/
 │   ├── setup.sh               # Mac setup script
 │   ├── package.json
 │   └── com.remote.desktop.agent.plist  # LaunchAgent for background run
+├── win-agent/                 # Run on Windows host machine
+│   ├── agent.js               # Screen capture + input handler (Windows)
+│   ├── setup.ps1              # Windows setup script
+│   └── package.json
 └── README.md
 ```
