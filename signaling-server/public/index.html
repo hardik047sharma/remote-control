@@ -132,7 +132,11 @@
 
   function wsUrl() {
     const l = window.location;
-    return (l.protocol === "https:" ? "wss:" : "ws:") + "//" + l.host;
+    const protocol = l.protocol === "https:" ? "wss:" : "ws:";
+    const path = l.pathname || "/";
+    const basePath = path.endsWith("/") ? path.slice(0, -1) : path;
+    const prefix = basePath === "" ? "" : basePath;
+    return protocol + "//" + l.host + prefix + "/ws";
   }
 
   goBtn.onclick = () => {

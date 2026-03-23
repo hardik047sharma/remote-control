@@ -13,10 +13,7 @@ fi
 echo "Installing npm dependencies..."
 npm install
 
-read -p "Enter room password (default: changeme): " ROOM_PASS
-ROOM_PASS=${ROOM_PASS:-changeme}
-read -p "Enter port (default: 3000): " PORT_VAL
-PORT_VAL=${PORT_VAL:-3000}
+PORT_VAL=3000
 
 echo ""
 echo "=== Opening firewall port ${PORT_VAL} ==="
@@ -27,8 +24,8 @@ echo "  Source: 0.0.0.0/0, TCP, Dest Port: ${PORT_VAL}"
 
 echo ""
 echo "=== Starting server ==="
-echo "Room password: ${ROOM_PASS}"
+echo "Room password: pass"
 echo "Port: ${PORT_VAL}"
 echo ""
 
-ROOM_PASSWORD="${ROOM_PASS}" PORT="${PORT_VAL}" node server.js
+node server.js

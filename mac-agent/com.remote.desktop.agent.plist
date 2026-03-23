@@ -9,21 +9,6 @@
         <string>/usr/local/bin/node</string>
         <string>AGENT_PATH/agent.js</string>
     </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>SIGNAL_SERVER</key>
-        <string>ws://YOUR_ORACLE_IP:3000</string>
-        <key>ROOM</key>
-        <string>default</string>
-        <key>ROOM_PASSWORD</key>
-        <string>changeme</string>
-        <key>FPS</key>
-        <string>15</string>
-        <key>QUALITY</key>
-        <string>5</string>
-        <key>SCALE</key>
-        <string>1280:-1</string>
-    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

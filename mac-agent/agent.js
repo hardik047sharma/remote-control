@@ -1,30 +1,13 @@
 const { spawn, execSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
 const WebSocket = require("ws");
 
-try {
-  const envPath = path.join(__dirname, ".env");
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, "utf8").split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq === -1) continue;
-      const key = trimmed.slice(0, eq).trim();
-      const val = trimmed.slice(eq + 1).trim();
-      if (!process.env[key]) process.env[key] = val;
-    }
-  }
-} catch {}
-
-const SIGNAL_SERVER = process.env.SIGNAL_SERVER || "ws://localhost:3000";
-const ROOM = process.env.ROOM || "default";
-const PASSWORD = process.env.ROOM_PASSWORD || "changeme";
-const FPS = parseInt(process.env.FPS || "15", 10);
-const QUALITY = parseInt(process.env.QUALITY || "5", 10);
-const SCALE = process.env.SCALE || "1280:-1";
+// Fixed deployment config (no environment variables needed)
+const SIGNAL_SERVER = "ws://140.245.15.97/remoteControl/ws";
+const ROOM = "default";
+const PASSWORD = "pass";
+const FPS = 15;
+const QUALITY = 5;
+const SCALE = "1280:-1";
 
 let screenWidth = 1920;
 let screenHeight = 1080;

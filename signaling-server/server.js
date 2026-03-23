@@ -3,14 +3,19 @@ const http = require("http");
 const { WebSocketServer } = require("ws");
 const path = require("path");
 
-const PORT = process.env.PORT || 3000;
-const ROOM_PASSWORD = process.env.ROOM_PASSWORD || "changeme";
+// Fixed deployment config (no environment variables needed)
+const PORT = 3000;
+const ROOM_PASSWORD = "pass";
+const BASE_PATH = "/remoteControl";
+const WS_PATH = "/remoteControl/ws";
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, maxPayload: 10 * 1024 * 1024 });
+const wss = new WebSocketServer({ server, path: WS_PATH, maxPayload: 10 * 1024 * 1024 });
 
 app.use(express.static(path.join(__dirname, "public")));
+app.use(BASE_PATH, express.static(path.join(__dirname, "public")));
+app.get("/", (_req, res) => res.redirect(`${BASE_PATH}/`));
 
 const rooms = {};
 
@@ -119,5 +124,6 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Remote Desktop Server running on port ${PORT}`);
-  console.log(`Client UI: http://0.0.0.0:${PORT}`);
+  console.log(`Client UI: http://0.0.0.0:${PORT}${BASE_PATH}/`);
+  console.log(`WebSocket path: ${WS_PATH}`);
 });

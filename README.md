@@ -53,11 +53,11 @@ Make sure port 3000 is open:
 To run the server persistently:
 ```bash
 # Using nohup
-nohup ROOM_PASSWORD=your_password node server.js &
+nohup node server.js &
 
 # Or using pm2
 npm install -g pm2
-ROOM_PASSWORD=your_password pm2 start server.js --name remote-desktop
+pm2 start server.js --name remote-desktop
 pm2 save
 pm2 startup
 ```
@@ -72,8 +72,6 @@ chmod +x setup.sh
 
 The setup script will:
 - Install ffmpeg, cliclick, and Node.js dependencies
-- Ask for your server IP and room settings
-- Create a .env config file
 - Configure the LaunchAgent plist
 
 To run manually:
@@ -100,23 +98,24 @@ If using LaunchAgent, also add `node` to both permission lists.
 
 Open Chrome on your Windows machine:
 ```
-http://YOUR_ORACLE_IP:3000
+http://YOUR_ORACLE_IP/remoteControl/
 ```
 
 Enter the room name and password, then click Connect.
 
 ## Configuration
 
-### Mac Agent Environment Variables
+This project now uses fixed in-code configuration (no `.env` required):
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| SIGNAL_SERVER | ws://localhost:3000 | WebSocket URL of your server |
-| ROOM | default | Room name |
-| ROOM_PASSWORD | changeme | Room password |
-| FPS | 15 | Capture framerate |
-| QUALITY | 5 | JPEG quality (1=best, 31=worst) |
-| SCALE | 1280:-1 | Output resolution (width:-1 keeps aspect) |
+- Server port: `3000` (internal, proxied by Nginx)
+- Server base path: `/remoteControl`
+- WebSocket path: `/remoteControl/ws`
+- Room password: `pass`
+- Mac signaling server: `ws://140.245.15.97/remoteControl/ws`
+- Room: `default`
+- FPS: `15`
+- Quality: `5`
+- Scale: `1280:-1`
 
 ### Performance Tuning
 
@@ -141,7 +140,7 @@ Audio is not implemented in the current browser relay path yet.
 | Connection refused | Check server is running, port 3000 open on Oracle |
 | Low FPS | Reduce QUALITY value, lower SCALE resolution |
 | ffmpeg errors | Run `ffmpeg -f avfoundation -list_devices true -i ""` to check device indices |
-| Agent won't connect | Verify SIGNAL_SERVER URL is correct (ws://IP:3000) |
+| Agent won't connect | Verify Nginx forwards `/remoteControl/ws` to the Node server |
 
 ## Security Recommendations
 
