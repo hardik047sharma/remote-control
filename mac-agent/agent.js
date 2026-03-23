@@ -8,6 +8,7 @@ const PASSWORD = "pass";
 const FPS = 15;
 const QUALITY = 5;
 const SCALE = "1280:-1";
+const VIDEO_INPUT = detectVideoInput();
 
 let screenWidth = 1920;
 let screenHeight = 1080;
@@ -27,11 +28,28 @@ try {
 console.log(`Screen: ${screenWidth}x${screenHeight}`);
 console.log(`Server: ${SIGNAL_SERVER}`);
 console.log(`FPS: ${FPS}, Quality: ${QUALITY}, Scale: ${SCALE}`);
+console.log(`Video input: ${VIDEO_INPUT}`);
 
 let ws = null;
 let ffmpegProcess = null;
 let connected = false;
 let clientConnected = false;
+
+function detectVideoInput() {
+  try {
+    // avfoundation prints device list to stderr; capture both streams.
+    const out = execSync(`ffmpeg -f avfoundation -list_devices true -i "" 2>&1`, { encoding: "utf8" });
+    const lines = out.split("\n");
+    for (const line of lines) {
+      const m = line.match(/\[(\d+)\]\s+Capture screen/i);
+      if (m) {
+        return `${m[1]}:none`;
+      }
+    }
+  } catch {}
+  // Most Macs expose the primary display at 0.
+  return "0:none";
+}
 
 function hasCliclick() {
   try {
@@ -116,7 +134,7 @@ function startCapture() {
     "-f", "avfoundation",
     "-capture_cursor", "1",
     "-framerate", String(FPS),
-    "-i", "1:none",
+    "-i", VIDEO_INPUT,
     "-vf", `scale=${SCALE}`,
     "-f", "image2pipe",
     "-vcodec", "mjpeg",
@@ -129,6 +147,7 @@ function startCapture() {
   ffmpegProcess = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
 
   let buffer = Buffer.alloc(0);
+  let recentStderr = [];
 
   ffmpegProcess.stdout.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
@@ -150,13 +169,26 @@ function startCapture() {
   });
 
   ffmpegProcess.stderr.on("data", (data) => {
-    const line = data.toString().trim();
-    if (line && !line.startsWith("frame=") && !line.startsWith("  ") && !line.includes("encoder")) {
+    const text = data.toString();
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      recentStderr.push(line);
+      if (recentStderr.length > 20) recentStderr.shift();
+      if (!line.startsWith("frame=") && !line.includes("time=")) {
+        console.log("[ffmpeg]", line);
+      }
     }
   });
 
   ffmpegProcess.on("close", (code) => {
     console.log("ffmpeg exited:", code);
+    if (code !== 0 && recentStderr.length) {
+      console.log("ffmpeg last errors:");
+      for (const line of recentStderr.slice(-8)) {
+        console.log(" ", line);
+      }
+      console.log("If you see permission errors, re-check Screen Recording permission for Terminal/iTerm and restart that app.");
+    }
     ffmpegProcess = null;
     if (clientConnected) {
       setTimeout(startCapture, 1000);
